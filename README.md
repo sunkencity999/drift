@@ -55,7 +55,24 @@ Drift is the companion to [**Mechanic**](https://github.com/sunkencity999/mechan
 - **Mechanic** watches *runtime metrics* continuously (CPU, memory, Ollama models loaded, Docker containers) and tells you **the numbers moved** — "CPU is anomalous right now."
 - **Drift** watches *operational configuration* at intervals (ports, services, packages, users, cron) and tells you **what configuration moved** — "port 9000 was opened 2 hours ago."
 
-**The workflow:** Mechanic flags that something is off → ask Drift what changed between now and the last snapshot → Drift shows the config change that explains it. A CPU spike (Mechanic) + a newly-enabled service (Drift) = the full story. Each is useful alone; together they cover "is this abnormal?" *and* "what changed?".
+Each is a **fully standalone** install — separate repo, separate venv, separate database, separate daemon. Neither depends on the other; you can install one or both. They pair only by both being MCP servers your AI client can call, and by each referencing the other in its README. They never share data or talk to each other directly — the AI client is the bridge.
+
+**The workflow:** Mechanic flags that something is off → ask Drift what changed between now and the last snapshot → Drift shows the config change that explains it.
+
+**A concrete worked example.** You ask your AI client: *"is the current CPU usage normal?"* Mechanic answers:
+
+```json
+{"metric": "os.cpu_pct", "value": 92, "normal": false, "z_score": 8.1, "mean": 11, "std": 6}
+```
+
+That tells you *something* is wrong but not *why*. So you ask: *"use drift — what changed on this box between the last two snapshots?"* Drift answers:
+
+```
+Compared 'auto #41' → 'auto #42'. Changes:
+  services: 1 service(s) added (dev.ml-trainer.plist).
+```
+
+A new launchd service appeared — that's the ml-trainer running flat-out, which explains the CPU spike Mechanic flagged. Mechanic said "the numbers are off"; Drift said "here's the configuration that moved." Together: the full diagnosis.
 
 ## Quickstart
 
@@ -127,16 +144,61 @@ Collector availability + storage health (path, schema version, total snapshots).
 
 ### Example prompts to try
 
-- *"Use drift — what changed on this box between the two most recent snapshots?"*
-- *"Take a drift snapshot labeled 'before-upgrade'."* → (do the upgrade) → *"Now diff 'before-upgrade' against the latest snapshot and tell me what changed."*
-- *"List recent drift snapshots. Which two should I compare to see Tuesday's changes?"*
-- *"Run drift's doctor tool — what collectors are available?"*
-- *"What ports opened or closed on this box recently?"*
-- *"Were any packages installed or removed since the last snapshot?"*
-- *"Did the set of running services change? Use drift to diff."*
-- *"Any new users added to this box since the baseline snapshot?"*
+These are written for an AI client (Claude Code, etc.) that has the `drift` MCP server connected. Copy them verbatim or adapt — grouped by what you're actually trying to do.
 
-**Tip:** you don't have to know snapshot ids — labels work, and `latest()` / `list_snapshots()` let the AI pick sensible defaults.
+**First run / "is this thing on?"**
+- *"Run the drift doctor tool and tell me what collectors are available on this machine."*
+- *"Is drift healthy? Show me storage status and which collectors are active."*
+- *"Use drift's list_snapshots tool — are there any snapshots yet? Is the snapshotter running?"*
+- *"Show me the latest snapshot — what does this box look like right now?"*
+
+**"What changed?" — the core question**
+- *"Use drift — what changed on this box between the two most recent snapshots?"*
+- *"Diff the latest snapshot against the one before it and summarize the changes."*
+- *"What changed on this box in the last few snapshots? Just the differences."*
+- *"Take a snapshot now, then diff it against the previous one."*
+
+**Before / after workflows**
+- *"Take a drift snapshot labeled 'before-deploy'."* → (do the deploy) → *"Now take another snapshot and diff it against 'before-deploy'. What changed?"*
+- *"Snapshot the current state labeled 'baseline' so I can diff against it later."*
+- *"I'm about to run an upgrade. Capture a drift snapshot first so I can see what moves."*
+
+**Specific collectors**
+- *"What ports opened or closed on this box between the last two snapshots?"*
+- *"Were any packages installed or removed since the last snapshot?"*
+- *"Did the set of running services or launchd labels change recently?"*
+- *"Any new users added to this box since the baseline snapshot? Any removed?"*
+- *"Have any launchd agents or cron entries been added or removed?"*
+
+**Investigating an incident**
+- *"Something feels off on this box. Use drift to diff the last two snapshots and tell me what changed."*
+- *"I think someone changed something yesterday. List the snapshots from then and diff the relevant pair."*
+- *"A new port is open that I don't recognize — when did it first appear? Diff snapshots around then."*
+- *"Did anything change on this box while I was on PTO? Diff the oldest snapshot I have against now."*
+
+**Multi-tool / "investigate for me"**
+- *"List recent drift snapshots, then diff the two most recent and give me a one-paragraph summary of what changed."*
+- *"Run drift's doctor, then tell me what changed between the last two snapshots."*
+- *"I'm back from a week off — use drift to tell me what changed on this box since I left."*
+
+**Tip:** you don't have to know snapshot ids — labels work, and `latest()` / `list_snapshots()` let the AI pick sensible defaults. You also don't have to know which tool to call; just describe the situation and let the AI pick `diff`, `latest`, `list_snapshots`, or `doctor`.
+
+## CLI reference
+
+Everything the MCP server does, you can also do from the shell:
+
+```bash
+drift snap [--label before-deploy]   # capture a snapshot now (labeled ones are prune-exempt)
+drift diff A B                       # compare two snapshots (by id or label); prints English
+drift diff A B --json                # structured JSON instead of English
+drift list                           # recent snapshots, newest first
+drift status                         # show the most recent snapshot
+drift doctor                         # collector availability + storage health
+drift snapshotter                    # run the auto-snapshot daemon (foreground; supervisors manage this)
+drift server                         # run the MCP stdio server (spawned by AI clients)
+```
+
+`A` and `B` accept either a snapshot id (`drift diff 3 5`) or a label (`drift diff before-deploy after-deploy`). A label resolves to the *latest* snapshot with that label.
 
 ## Configuration
 
@@ -227,7 +289,7 @@ drift/
       ports.py services.py packages.py users.py cron.py
   scripts/
     install.sh uninstall.sh
-  tests/                       # pytest; ~85 tests, bottom-up TDD
+  tests/                       # pytest; 86 tests, bottom-up TDD
 ```
 
 ## Security
