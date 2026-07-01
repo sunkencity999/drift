@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+
+# Tooling
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Drift runtime data (don't commit local state)
+*.sqlite
+*.sqlite3
+drift.db
+drift.sqlite
+
+# OS
+.DS_Store
