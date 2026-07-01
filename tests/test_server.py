@@ -43,10 +43,43 @@ def _call(server, tool, args):
     return result
 
 
-def test_list_tools_exposes_four(server):
+def test_list_tools_exposes_five(server):
     tools = asyncio.run(server.list_tools())
     names = {t.name for t in tools}
-    assert {"diff", "latest", "list_snapshots", "doctor"} <= names
+    assert {"diff", "diff_latest", "latest", "list_snapshots", "doctor"} <= names
+
+
+def test_diff_latest_diffs_two_most_recent(server, store):
+    """diff_latest() compares the two most recent snapshots with no args — the
+    convenience tool so a user can ask 'were any packages removed?' without naming
+    which snapshots to compare."""
+    r = _call(server, "diff_latest", {})
+    assert r["ok"] is True
+    # the two most recent are 'after-deploy' (newest) and 'baseline' (older)
+    assert "8080" in r["summary"]  # 8080 was added between them
+    assert r["snapshot_a"]["label"] == "baseline"  # older = a, newer = b
+    assert r["snapshot_b"]["label"] == "after-deploy"
+
+
+def test_diff_latest_returns_note_when_only_one_snapshot(config):
+    s = Store(config)
+    s.open()
+    s.write_snapshot({"collectors": {"ports": {"listeners": []}}}, label="only")
+    srv = build_server(s, config)
+    r = _call(srv, "diff_latest", {})
+    # can't diff with only one snapshot — clear, ok=False response explaining why
+    assert r.get("ok") is False
+    assert "two snapshots" in r.get("error", "").lower() or "one" in r.get("error", "").lower()
+
+
+def test_diff_latest_returns_note_when_empty(config):
+    s = Store(config)
+    s.open()
+    srv = build_server(s, config)
+    r = _call(srv, "diff_latest", {})
+    assert r.get("ok") is False
+    # error message should mention the count / need for two snapshots
+    assert "two snapshots" in r.get("error", "").lower()
 
 
 def test_doctor_reports_store_and_collectors(server, store):

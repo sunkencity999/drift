@@ -27,11 +27,14 @@ def build_server(store: Store, config: Config) -> FastMCP:
 
     @mcp.tool(name="diff")
     def diff_snapshots(snapshot_a: str, snapshot_b: str) -> dict[str, Any]:
-        """Compare two snapshots and explain the changes.
+        """Compare two snapshots and explain what changed in plain English.
 
-        Each argument is a snapshot id (int) or label (resolved to the latest with
-        that label). Returns a structured diff (added/removed/changed per collector)
-        AND a plain-English summary string. Use this to answer 'what changed?'.
+        Use this to answer 'what changed?' questions about OPERATIONAL STATE:
+        ports opened/closed, packages installed/removed, services enabled/disabled,
+        users added/removed, cron/launchd entries changed. Each argument is a
+        snapshot id (int) or label (resolved to the latest with that label). Returns
+        a structured diff (added/removed/changed per collector) AND a plain-English
+        summary. For a no-args 'what changed recently?' use diff_latest instead.
         """
         a = store.resolve_snapshot(snapshot_a)
         b = store.resolve_snapshot(snapshot_b)
@@ -63,9 +66,42 @@ def build_server(store: Store, config: Config) -> FastMCP:
             "payload": snap["payload"],
         }
 
+    @mcp.tool(name="diff_latest")
+    def diff_latest_tool() -> dict[str, Any]:
+        """What changed on this box recently? No arguments needed.
+
+        This is the tool to reach for when a user asks casually: 'what changed?',
+        'were any packages installed or removed?', 'did any ports open or close?',
+        'were any services or users added?', 'what's different since the last
+        snapshot?' It diffs the two most recent snapshots and returns a structured
+        diff plus a plain-English summary. Use `diff` instead when the user names
+        specific snapshots or labels to compare.
+        """
+        rows = store.list_snapshots(limit=2)
+        if len(rows) < 2:
+            return {"ok": False, "error": f"need at least two snapshots to diff (have {len(rows)})"}
+        latest_row = rows[0]  # newest first
+        prev_row = rows[1]
+        a = store.read_snapshot(prev_row["id"])
+        b = store.read_snapshot(latest_row["id"])
+        d = diff(a["payload"], b["payload"])
+        label_a = a["label"] or f"#{a['id']}"
+        label_b = b["label"] or f"#{b['id']}"
+        return {
+            "ok": True,
+            "snapshot_a": {"id": a["id"], "label": a["label"], "ts": a["ts"]},
+            "snapshot_b": {"id": b["id"], "label": b["label"], "ts": b["ts"]},
+            "diff": d,
+            "summary": summarize(d, label_a, label_b),
+        }
+
     @mcp.tool()
     def list_snapshots(limit: int = 20) -> dict[str, Any]:
-        """Recent snapshots, newest first. Each: id, ts, label."""
+        """List recent snapshots the user could diff — newest first, with id/ts/label.
+
+        Use this when a user asks 'what snapshots do I have?' or 'which two should I
+        compare to see Tuesday's changes?' — then call `diff` on the chosen pair.
+        """
         rows = store.list_snapshots(limit=limit)
         return {
             "count": len(rows),
@@ -76,7 +112,10 @@ def build_server(store: Store, config: Config) -> FastMCP:
 
     @mcp.tool()
     def doctor() -> dict[str, Any]:
-        """Report Drift's health: collector availability + storage status."""
+        """Is Drift healthy on this box? Reports which collectors are available
+        (ports, services, packages, users, cron) and storage status. Use this for
+        'is drift working?' / 'what can it watch here?' questions.
+        """
         collectors = []
         for c in _collector_registry.all():
             try:

@@ -133,6 +133,9 @@ Compare two snapshots. Each argument is a snapshot id (int) or label (resolved t
  "summary": "Compared 'before' → 'after'. Changes: ports: 1 port(s) added (8080/tcp)."}
 ```
 
+### `diff_latest()`
+The convenience tool: diff the two most recent snapshots with no arguments. This is what your AI client reaches for when you ask casually — *"what changed recently?"*, *"were any packages installed or removed?"*, *"did any ports open or close?"* — without naming specific snapshots. Same return shape as `diff`. Use `diff` when you want to compare specific named snapshots.
+
 ### `latest()`
 The most recent snapshot (id, ts, label, full payload).
 
