@@ -59,6 +59,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("list", help="list recent snapshots")
     sub.add_parser("snapshotter", help="run the auto-snapshot daemon (foreground)")
+    sub.add_parser("server", help="run the MCP stdio server (spawned by AI clients)")
     sub.add_parser("doctor", help="report collector availability + storage health")
     sub.add_parser("status", help="show the most recent snapshot")
     return p
@@ -180,6 +181,21 @@ def cmd_doctor(cfg: Config) -> int:
     return EXIT_OK
 
 
+def cmd_server(cfg: Config) -> int:
+    """Run the MCP stdio server. Spawned on demand by AI clients (Claude Code, etc.)."""
+    from drift.server import build_server
+
+    store = _open_store(cfg)
+    mcp = build_server(store, cfg)
+    try:
+        mcp.run()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        store.close()
+    return EXIT_OK
+
+
 def cmd_snapshotter(cfg: Config) -> int:
     stop = threading.Event()
 
@@ -222,6 +238,7 @@ _DISPATCH = {
     "diff": lambda cfg, args: cmd_diff(cfg, args.snapshot_a, args.snapshot_b, args.json),
     "list": lambda cfg, args: cmd_list(cfg),
     "snapshotter": lambda cfg, args: cmd_snapshotter(cfg),
+    "server": lambda cfg, args: cmd_server(cfg),
     "doctor": lambda cfg, args: cmd_doctor(cfg),
     "status": lambda cfg, args: cmd_status(cfg),
 }

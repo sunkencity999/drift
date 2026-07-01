@@ -14,6 +14,7 @@ def test_cli_has_subcommands():
         ["diff", "a", "b"],
         ["list"],
         ["snapshotter"],
+        ["server"],
         ["doctor"],
         ["status"],
     ]
