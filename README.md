@@ -2,6 +2,8 @@
 
 > A `diff` for live systems. Snapshot a box's operational state, then ask **"what changed, in plain English?"** — over MCP.
 
+> 🎬 **See it in action:** an interactive over-the-shoulder demo of Mechanic × Drift at **https://sunkencity999.github.io/mechanic-drift-demo/**.
+
 ```
    you come back from PTO ──┐
                             ▼
