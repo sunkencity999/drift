@@ -80,7 +80,7 @@ A new launchd service appeared — that's the ml-trainer running flat-out, which
 bash scripts/install.sh
 ```
 
-Installs Drift into a venv under `~/.local/share/drift`, starts the snapshotter daemon (every 6h, auto-prune to 240 snapshots), and wires it into Claude Code's MCP config. Then restart your AI client and ask:
+Installs Drift into a venv under `~/.local/share/drift`, starts the snapshotter daemon (every 6h, auto-prune to 240 snapshots), and wires it into every MCP client it finds on your box — **Claude Code, Codex, and Antigravity** (see [Supported AI clients](#supported-ai-clients) below). Then restart your AI client and ask:
 
 > *"Use drift — what changed on this box between the two most recent snapshots?"*
 
@@ -121,6 +121,25 @@ bash scripts/uninstall.sh          # stops daemon, removes install, keeps data +
 bash scripts/uninstall.sh --purge  # also removes data + config
 ```
 
+### Supported AI clients
+
+Drift is a standard **stdio MCP server**, so it works with any MCP-speaking client. The installer auto-wires the ones whose config it detects on your box:
+
+| Client | Config file | Auto-wired? |
+|---|---|---|
+| **Claude Code** | `~/.claude.json` | ✓ |
+| **Codex** (OpenAI) | `~/.codex/config.toml` | ✓ |
+| **Antigravity** (Google) | `~/.gemini/antigravity/mcp_config.json` | ✓ |
+| Cursor, Cline, others | — | manual (see below) |
+
+For a client the installer doesn't recognize, add a server entry manually in that client's MCP config. The server command is:
+
+```
+/Users/<you>/.local/share/drift/.venv/bin/drift server
+```
+
+with the env var `DRIFT_DATA_DIR=/Users/<you>/.local/share/drift-data`. (Most MCP clients use the `{"mcpServers": {"drift": {"command": "...", "args": ["server"], "env": {...}}}}` shape.)
+
 ## The MCP tools
 
 These are what your AI client sees. All read-only, all return JSON.
@@ -147,7 +166,7 @@ Collector availability + storage health (path, schema version, total snapshots).
 
 ### Example prompts to try
 
-These are written for an AI client (Claude Code, etc.) that has the `drift` MCP server connected. Copy them verbatim or adapt — grouped by what you're actually trying to do.
+These are written for any AI client (Claude Code, Codex, Antigravity, Cursor, Cline, etc.) that has the `drift` MCP server connected. Copy them verbatim or adapt — grouped by what you're actually trying to do.
 
 **First run / "is this thing on?"**
 - *"Run the drift doctor tool and tell me what collectors are available on this machine."*
