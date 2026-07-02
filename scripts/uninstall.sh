@@ -48,11 +48,16 @@ else
   fi
 fi
 
-CLAUDE_JSON="$HOME/.claude.json"
-if [[ -f "$CLAUDE_JSON" ]] && [[ -x "$VENV_DIR/bin/python" ]]; then
-  "$VENV_DIR/bin/python" - <<PYEOF 2>/dev/null || true
-import json, os
-path = os.path.expanduser("$CLAUDE_JSON")
+# --- remove MCP client wiring (Claude, Codex, Antigravity — whichever exist) -
+PY="$VENV_DIR/bin/python"
+[[ -x "$PY" ]] || PY=""
+
+# Claude + Antigravity: JSON, drop the key
+for path in "$HOME/.claude.json" "$HOME/.gemini/antigravity/mcp_config.json"; do
+  if [[ -f "$path" ]] && [[ -n "$PY" ]]; then
+    "$PY" - "$path" <<'PYEOF' 2>/dev/null || true
+import json, sys
+path = sys.argv[1]
 try:
     with open(path) as f: cfg = json.load(f)
 except Exception:
@@ -61,7 +66,27 @@ mcp = cfg.get("mcpServers", {})
 if "drift" in mcp:
     del mcp["drift"]
     with open(path, "w") as f: json.dump(cfg, f, indent=2)
-    print("✓ removed 'drift' from ~/.claude.json")
+    print(f"✓ removed 'drift' from {path}")
+PYEOF
+  fi
+done
+
+# Codex: TOML — delete the [mcp_servers.drift] + [mcp_servers.drift.env] blocks.
+CODEX_TOML="$HOME/.codex/config.toml"
+if [[ -f "$CODEX_TOML" ]] && [[ -n "$PY" ]] && grep -q "mcp_servers.drift" "$CODEX_TOML"; then
+  cp "$CODEX_TOML" "$CODEX_TOML.drift-uninstall-bak.$(date +%Y%m%d%H%M%S)"
+  "$PY" - "$CODEX_TOML" <<'PYEOF' 2>/dev/null || true
+import sys, re
+path = sys.argv[1]
+s = open(path).read()
+pattern = re.compile(
+    r"\n*(?:# Drift[^\n]*\n)?\[mcp_servers\.drift\]\n.*?\n\[mcp_servers\.drift\.env\]\n.*?(?=\n\[|\Z)",
+    re.DOTALL,
+)
+s2 = pattern.sub("\n", s)
+if s2 != s:
+    open(path, "w").write(s2)
+    print(f"✓ removed 'drift' from {path}")
 PYEOF
 fi
 

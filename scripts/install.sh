@@ -182,37 +182,78 @@ fi
 
 hdr "AI client wiring"
 CLAUDE_JSON="$HOME/.claude.json"
-wire_claude() {
-  if [[ ! -f "$CLAUDE_JSON" ]]; then
-    warn "~/.claude.json not found — skipping Claude Code wiring."
-    info "When you install Claude Code, re-run this script or add the server manually:"
-    info "  drift server  (as an stdio MCP server)"
+CODEX_TOML="$HOME/.codex/config.toml"
+ANTIGRAVITY_JSON="$HOME/.gemini/antigravity/mcp_config.json"
+
+# wire a JSON-format client (Claude, Antigravity). $1 = path, $2 = label for messages.
+wire_json_client() {
+  local path="$1" label="$2"
+  if [[ ! -f "$path" ]]; then
+    info "$label not found — skipping ($path)"
     return
   fi
-  cp "$CLAUDE_JSON" "$CLAUDE_JSON.drift-bak.$(date +%Y%m%d%H%M%S)"
-  "$VENV_DIR/bin/python" - <<PYEOF
-import json, os
-path = os.path.expanduser("$CLAUDE_JSON")
-with open(path) as f:
-    cfg = json.load(f)
+  cp "$path" "$path.drift-bak.$(date +%Y%m%d%H%M%S)"
+  "$VENV_DIR/bin/python" - "$path" <<PYEOF
+import json, sys
+path = sys.argv[1]
+try:
+    with open(path) as f:
+        cfg = json.load(f)
+except Exception:
+    cfg = {}
 mcp = cfg.setdefault("mcpServers", {})
-venv = "$VENV_DIR"
 mcp["drift"] = {
     "type": "stdio",
-    "command": f"{venv}/bin/drift",
+    "command": "$VENV_DIR/bin/drift",
     "args": ["server"],
     "env": {"DRIFT_DATA_DIR": "$DATA_DIR"},
 }
 with open(path, "w") as f:
     json.dump(cfg, f, indent=2)
-print("✓ wired 'drift' server into ~/.claude.json")
+print(f"✓ wired 'drift' into {path}")
 PYEOF
 }
 
-if [[ "$SKIP_CLAUDE_WIRE" == "1" ]]; then
-  info "Claude wiring skipped (DRIFT_SKIP_CLAUDE_WIRE=1)"
+# wire Codex (TOML). Targeted idempotent append — no round-trip, preserves user content.
+wire_codex() {
+  if [[ ! -f "$CODEX_TOML" ]]; then
+    info "Codex not found — skipping ($CODEX_TOML)"
+    return
+  fi
+  if "$VENV_DIR/bin/python" - "$CODEX_TOML" <<PYEOF
+import tomllib, sys
+with open(sys.argv[1], "rb") as f:
+    d = tomllib.load(f)
+raise SystemExit(0 if "drift" in d.get("mcp_servers", {}) else 1)
+PYEOF
+  then
+    info "Codex already has 'drift' — skipping ($CODEX_TOML)"
+    return
+  fi
+  cp "$CODEX_TOML" "$CODEX_TOML.drift-bak.$(date +%Y%m%d%H%M%S)"
+  cat >> "$CODEX_TOML" <<EOF
+
+# Drift — a diff for live systems. Added by drift install.sh.
+[mcp_servers.drift]
+command = "$VENV_DIR/bin/drift"
+args = ["server"]
+startup_timeout_sec = 30
+[mcp_servers.drift.env]
+DRIFT_DATA_DIR = "$DATA_DIR"
+EOF
+  log "wired 'drift' into $CODEX_TOML"
+}
+
+wire_mcp_clients() {
+  wire_json_client "$CLAUDE_JSON" "Claude Code"
+  wire_codex
+  wire_json_client "$ANTIGRAVITY_JSON" "Antigravity"
+}
+
+if [[ "${SKIP_MCP_WIRE:-${DRIFT_SKIP_CLAUDE_WIRE:-0}}" == "1" ]]; then
+  info "MCP client wiring skipped (SKIP_MCP_WIRE=1)"
 else
-  wire_claude
+  wire_mcp_clients
 fi
 
 hdr "Health check"
